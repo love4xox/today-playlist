@@ -1,26 +1,44 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-lookbook: #ecebea;
+  --bg-mixtape: #f3efea;
+  --bg-vault: #ffffff;
+  --bg-surface: #f7f5f3;
+  --bg-subtle: #e5e1dc;
+  --text-main: #141414;
+  --text-muted: #686560;
+  --border-main: #141414;
+  --border-subtle: #dcd8d2;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html.dark {
+  --bg-lookbook: #141414;
+  --bg-mixtape: #181715;
+  --bg-vault: #111111;
+  --bg-surface: #1e1e1e;
+  --bg-subtle: #272727;
+  --text-main: #f0ede8;
+  --text-muted: #94908a;
+  --border-main: #3d3b38;
+  --border-subtle: #292826;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans-kr), -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--text-main);
+  background-color: var(--bg-lookbook);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+.font-editorial-serif {
+  font-family: var(--font-editorial-serif), Georgia, serif;
+}
+
+.font-grotesk {
+  font-family: var(--font-grotesk), sans-serif;
+}
+
+.font-mono-meta {
+  font-family: var(--font-mono), monospace;
 }
