@@ -413,7 +413,7 @@ export default function LookbookPage() {
               <span className="font-mono-meta mr-1 text-[10px] text-[var(--text-muted)]">
                 LIMIT:
               </span>
-              {[1, 2, 3, 5, 7, 10].map((num) => (
+              {[1, 2, 3, 4, 5, 6].map((num) => (
                 <button
                   key={num}
                   type="button"

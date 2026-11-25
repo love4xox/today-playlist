@@ -145,25 +145,20 @@ export default function CuratorPanel({
               <span className="font-mono-meta mr-1 text-[10px] tracking-widest text-[var(--text-muted)] uppercase">
                 TRACKS:
               </span>
-              {[1, 2, 3, 5].map((num) => {
-                const disabled =
-                  uniqueTracks.length > 0 && num > uniqueTracks.length;
-                return (
-                  <button
-                    key={num}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onChangeCount(num)}
-                    className={`font-mono-meta px-1.5 py-0.5 text-[11px] transition ${
-                      safeCount === num
-                        ? "underline decoration-2 underline-offset-4 font-bold text-[var(--text-main)]"
-                        : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
-                    } disabled:opacity-30`}
-                  >
-                    0{num}
-                  </button>
-                );
-              })}
+              {[1, 2, 3, 4, 5, 6].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => onChangeCount(num)}
+                  className={`font-mono-meta px-1.5 py-0.5 text-[11px] transition ${
+                    safeCount === num
+                      ? "underline decoration-2 underline-offset-4 font-bold text-[var(--text-main)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                  }`}
+                >
+                  {String(num).padStart(2, "0")}
+                </button>
+              ))}
             </div>
 
             <button
@@ -191,29 +186,26 @@ export default function CuratorPanel({
         </p>
       )}
 
-      {/* 1) 첫 번째 레퍼런스 무드: 중앙 대형 앨범 아트워크 + 우측 하단 TR.01/05 오버레이 인덱스 */}
+      {/* 중앙 대형 앨범 아트워크 + 우측 TR 인덱스 */}
       {currentItem && (
         <div className="relative mx-auto flex max-w-4xl flex-col items-center py-4 sm:py-8">
-          <div className="relative w-full max-w-[360px] sm:max-w-[440px]">
-            {/* 정사각형 앨범 아트워크 */}
-            <div className="aspect-square w-full shadow-2xl">
+          <div className="relative flex w-full max-w-[360px] flex-col sm:max-w-[600px] sm:flex-row sm:items-end sm:gap-6 md:max-w-[660px]">
+            <div className="aspect-square w-full max-w-[360px] shrink-0 shadow-2xl sm:max-w-[440px]">
               <AlbumArtwork
                 track={currentItem.track}
                 className="h-full w-full"
               />
             </div>
 
-            {/* 우측 하단 거대 인덱스 오버레이 (TR.01 / 05) */}
-            <div className="mt-5 flex items-end justify-between sm:mt-0 sm:block">
-              <div className="sm:absolute sm:-right-28 sm:bottom-12 md:-right-36 select-none">
-                <div className="font-grotesk text-6xl font-bold leading-[0.86] tracking-tighter sm:text-7xl md:text-8xl">
+            <div className="mt-5 flex items-end justify-between sm:mt-0 sm:flex-col sm:items-start sm:justify-end">
+              <div className="mb-3 select-none">
+                <div className="font-grotesk inline-block rounded-none border border-[#141414] bg-[#141414] px-3 py-1.5 text-5xl font-bold leading-[0.88] tracking-tighter text-[#F6F3EC] sm:text-6xl md:text-7xl">
                   TR.{currentStr}
                   <span className="block">/{totalStr}</span>
                 </div>
               </div>
 
-              {/* 인덱스 아래 아티스트 & 곡명 캡션 */}
-              <div className="text-right sm:absolute sm:-right-28 sm:-bottom-6 md:-right-36 sm:text-left">
+              <div className="border-t border-[var(--border-subtle)] pt-2 text-right sm:w-full sm:text-left">
                 <p className="text-xs font-bold leading-tight">
                   {currentItem.track.title}
                 </p>
@@ -224,8 +216,7 @@ export default function CuratorPanel({
             </div>
           </div>
 
-          {/* 큐레이터 코멘트 & 무환각 ID 배지 */}
-          <div className="mt-10 max-w-lg text-center space-y-2">
+          <div className="mt-10 max-w-lg space-y-2 text-center">
             <p className="text-xs leading-relaxed text-[var(--text-main)] sm:text-sm">
               “{currentItem.comment}”
             </p>
@@ -242,11 +233,10 @@ export default function CuratorPanel({
         </div>
       )}
 
-      {/* 2) 두 번째 레퍼런스 무드: 가로 앨범 필름스트립 & 세리프 헤드라인 */}
+      {/* 가로 앨범 필름스트립 & 세리프 헤드라인 */}
       {displayItems.length > 0 && (
         <div className="space-y-6 pt-4">
-          {/* 가로 앨범 스트립 */}
-          <div className="flex items-center justify-center gap-3 overflow-x-auto py-2 sm:gap-5">
+          <div className="flex items-center justify-start gap-4 overflow-x-auto px-2 py-4 sm:justify-center sm:gap-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {displayItems.map((item, idx) => {
               const isSelected = idx === currentIdx;
               return (
@@ -254,10 +244,10 @@ export default function CuratorPanel({
                   key={item.track.id}
                   type="button"
                   onClick={() => setActiveIndex(idx)}
-                  className={`group relative shrink-0 overflow-hidden rounded-md transition-all duration-300 ${
+                  className={`group relative aspect-square w-28 shrink-0 overflow-hidden rounded-md transition-all duration-300 sm:w-36 ${
                     isSelected
-                      ? "h-28 w-44 sm:h-36 sm:w-64 ring-1 ring-[var(--text-main)]"
-                      : "h-28 w-24 sm:h-36 sm:w-36"
+                      ? "-translate-y-1 ring-2 ring-[var(--text-main)] shadow-lg"
+                      : "opacity-80 hover:opacity-100"
                   }`}
                 >
                   <AlbumArtwork
@@ -266,14 +256,13 @@ export default function CuratorPanel({
                     className="h-full w-full"
                   />
                   <span className="font-mono-meta absolute bottom-2 left-2 bg-black/65 px-1.5 py-0.5 text-[9px] text-white">
-                    0{idx + 1}
+                    {String(idx + 1).padStart(2, "0")}
                   </span>
                 </button>
               );
             })}
           </div>
 
-          {/* 하단 세리프 타이틀 + 좌우 화살표 네비게이션 */}
           <div className="flex items-center justify-between px-2 pt-2">
             <button
               type="button"
