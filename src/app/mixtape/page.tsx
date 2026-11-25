@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
 import AlbumArtwork from "@/components/AlbumArtwork";
 import TopNav from "@/components/TopNav";
 import { prepareCandidateTracks } from "@/lib/playlist";
@@ -15,8 +14,11 @@ export default function MixtapePage() {
   const [result, setResult] = useState<CurationResult | null>(null);
   const [activeIndex, setActiveIndex] = useState<number>(0);
 
-  const stripRef = useRef<HTMLDivElement | null>(null);
-  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  // 오디오 미리듣기 상태
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fetchingPreview, setFetchingPreview] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     try {
@@ -47,28 +49,73 @@ export default function MixtapePage() {
   const currentIdx = Math.min(activeIndex, Math.max(0, displayItems.length - 1));
   const currentItem = displayItems[currentIdx];
 
+  // 선택된 트랙 변경 시 기존 오디오 정지 및 미리듣기 URL 조회
   useEffect(() => {
-    const target = itemRefs.current[currentIdx];
-    if (target) {
-      target.scrollIntoView({
-        behavior: "smooth",
-        inline: "center",
-        block: "nearest",
-      });
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
     }
-  }, [currentIdx, displayItems.length]);
+    setIsPlaying(false);
+    setPreviewUrl(null);
 
-  const handlePrev = () => {
-    setActiveIndex((prev) =>
-      prev <= 0 ? displayItems.length - 1 : prev - 1
-    );
+    if (!currentItem) return;
+
+    let cancelled = false;
+    setFetchingPreview(true);
+
+    const params = new URLSearchParams({
+      title: currentItem.track.title,
+      artist: currentItem.track.artist,
+    });
+
+    fetch(`/api/cover?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : { previewUrl: null }))
+      .then((data: { previewUrl?: string | null }) => {
+        if (!cancelled) {
+          setPreviewUrl(data.previewUrl || null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewUrl(null);
+      })
+      .finally(() => {
+        if (!cancelled) setFetchingPreview(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentItem?.track.id, currentItem?.track.title, currentItem?.track.artist]);
+
+  // 언마운트 시 오디오 정리
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, []);
+
+  const togglePlay = async () => {
+    if (!audioRef.current || !previewUrl) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch {
+        setIsPlaying(false);
+      }
+    }
   };
 
-  const handleNext = () => {
-    setActiveIndex((prev) =>
-      prev >= displayItems.length - 1 ? 0 : prev + 1
-    );
-  };
+  const youtubeSearchUrl = currentItem
+    ? `https://www.youtube.com/results?search_query=${encodeURIComponent(
+        `${currentItem.track.artist} ${currentItem.track.title}`
+      )}`
+    : "#";
 
   return (
     <div
@@ -77,86 +124,124 @@ export default function MixtapePage() {
     >
       <TopNav vaultCount={vault.length} subtitle="MIXTAPE ARCHIVE" />
 
-      {/* 중앙 정렬된 필름스트립 메인 영역 */}
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-10 py-6">
+      <audio
+        ref={audioRef}
+        src={previewUrl || undefined}
+        onEnded={() => setIsPlaying(false)}
+      />
+
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center py-6">
         {currentItem ? (
-          <>
-            {/* 상단 선택 트랙 메타 & 코멘트 */}
-            <div className="mx-auto max-w-xl space-y-2.5 text-center">
-              <div className="font-mono-meta inline-block border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[10px] tracking-widest text-[var(--text-muted)] uppercase">
-                {String(currentIdx + 1).padStart(2, "0")} —{" "}
-                {String(displayItems.length).padStart(2, "0")} · ID{" "}
-                {currentItem.track.id}
-              </div>
-
-              <p className="text-sm font-medium leading-relaxed sm:text-base">
-                “{currentItem.comment}”
+          <div className="space-y-8">
+            {/* 상단 헤드라인 */}
+            <div className="border-b border-[var(--border-subtle)] pb-4">
+              <p className="font-mono-meta mb-1 text-[10px] tracking-widest text-[var(--text-muted)] uppercase">
+                SIDE A · {displayItems.length} TRACKS CURATED
               </p>
-
-              <p className="text-xs text-[var(--text-muted)]">
-                {currentItem.track.title} — {currentItem.track.artist}
-              </p>
-            </div>
-
-            {/* 가로 필름스트립 (모든 프레임 동일 정사각형 + 스크롤바 완전 숨김) */}
-            <div
-              ref={stripRef}
-              className="no-scrollbar flex w-full items-center justify-start gap-4 overflow-x-auto px-4 py-4 sm:justify-center sm:gap-6"
-            >
-              {displayItems.map((item, idx) => {
-                const isSelected = idx === currentIdx;
-                return (
-                  <button
-                    key={`${item.track.id}-${idx}`}
-                    ref={(el) => {
-                      itemRefs.current[idx] = el;
-                    }}
-                    type="button"
-                    onClick={() => setActiveIndex(idx)}
-                    className={`group relative aspect-square w-40 shrink-0 overflow-hidden transition-all duration-300 sm:w-48 md:w-52 ${
-                      isSelected
-                        ? "-translate-y-1.5 opacity-100 ring-2 ring-[var(--text-main)] shadow-xl"
-                        : "opacity-65 hover:opacity-100"
-                    }`}
-                  >
-                    <AlbumArtwork
-                      track={item.track}
-                      grayscale={!isSelected}
-                      className="h-full w-full"
-                    />
-                    <span className="font-mono-meta absolute bottom-2 left-2 bg-black/65 px-1.5 py-0.5 text-[9px] text-white">
-                      {String(idx + 1).padStart(2, "0")}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 하단 세리프 타이틀 & 좌우 화살표 */}
-            <div className="flex items-center justify-between border-t border-[var(--border-subtle)] pt-6">
-              <button
-                type="button"
-                onClick={handlePrev}
-                aria-label="이전 트랙"
-                className="p-2 text-[var(--text-muted)] transition hover:text-[var(--text-main)]"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-
-              <h1 className="font-editorial-serif text-center text-2xl tracking-wide uppercase sm:text-4xl md:text-5xl">
+              <h1 className="font-editorial-serif text-2xl tracking-tight sm:text-4xl">
                 {result ? result.headline : "CURATED ARCHIVE"}
               </h1>
-
-              <button
-                type="button"
-                onClick={handleNext}
-                aria-label="다음 트랙"
-                className="p-2 text-[var(--text-muted)] transition hover:text-[var(--text-main)]"
-              >
-                <ArrowRight className="h-4 w-4" />
-              </button>
             </div>
-          </>
+
+            {/* 좌측 커버 + 우측 트랙리스트 2단 구성 */}
+            <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-12 md:gap-10">
+              {/* 좌측 선택 트랙 커버, 텍스트 재생 컨트롤 & 코멘트 */}
+              <div className="space-y-4 md:col-span-5">
+                <div className="aspect-square w-full max-w-[340px] shadow-xl">
+                  <AlbumArtwork
+                    track={currentItem.track}
+                    className="h-full w-full"
+                  />
+                </div>
+
+                <div className="space-y-2 border-t border-[var(--border-subtle)] pt-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono-meta text-[10px] text-[var(--text-muted)] uppercase">
+                      SELECTED · ID {currentItem.track.id}
+                    </span>
+
+                    {previewUrl ? (
+                      <button
+                        type="button"
+                        onClick={togglePlay}
+                        className="font-mono-meta py-0.5 text-[11px] tracking-wider text-[var(--text-main)] uppercase transition hover:underline hover:underline-offset-4"
+                      >
+                        {isPlaying ? "PAUSE 30S" : "PLAY 30S"}
+                      </button>
+                    ) : (
+                      <a
+                        href={youtubeSearchUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono-meta py-0.5 text-[10px] tracking-wider text-[var(--text-muted)] uppercase transition hover:text-[var(--text-main)] hover:underline hover:underline-offset-4"
+                      >
+                        {fetchingPreview
+                          ? "LOADING AUDIO..."
+                          : "LISTEN ON YOUTUBE →"}
+                      </a>
+                    )}
+                  </div>
+
+                  <p className="text-xs leading-relaxed sm:text-sm">
+                    “{currentItem.comment}”
+                  </p>
+                </div>
+              </div>
+
+              {/* 우측 전체 트랙 번호 리스트 */}
+              <div className="divide-y divide-[var(--border-subtle)] border-y border-[var(--border-subtle)] md:col-span-7">
+                {displayItems.map((item, idx) => {
+                  const isSelected = idx === currentIdx;
+                  return (
+                    <button
+                      key={`${item.track.id}-${idx}`}
+                      type="button"
+                      onClick={() => setActiveIndex(idx)}
+                      className={`flex w-full items-center justify-between gap-4 px-3 py-3.5 text-left transition ${
+                        isSelected
+                          ? "bg-[var(--text-main)] text-[var(--bg-mixtape)]"
+                          : "hover:bg-[var(--bg-surface)]"
+                      }`}
+                    >
+                      <div className="flex min-w-0 items-baseline gap-3">
+                        <span
+                          className={`font-mono-meta text-xs ${
+                            isSelected
+                              ? "opacity-80"
+                              : "text-[var(--text-muted)]"
+                          }`}
+                        >
+                          {String(idx + 1).padStart(2, "0")}
+                        </span>
+                        <div className="truncate">
+                          <p className="truncate text-sm font-semibold">
+                            {item.track.title}
+                          </p>
+                          <p
+                            className={`truncate text-xs ${
+                              isSelected
+                                ? "opacity-80"
+                                : "text-[var(--text-muted)]"
+                            }`}
+                          >
+                            {item.track.artist}
+                          </p>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`font-mono-meta shrink-0 text-[10px] uppercase ${
+                          isSelected ? "opacity-90" : "text-[var(--text-muted)]"
+                        }`}
+                      >
+                        {item.track.genre}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         ) : (
           <p className="text-center text-xs text-[var(--text-muted)]">
             보관함에 트랙이 없습니다. 03. VAULT에서 곡을 추가해 주세요.

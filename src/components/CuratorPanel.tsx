@@ -236,7 +236,7 @@ export default function CuratorPanel({
       {/* 가로 앨범 필름스트립 & 세리프 헤드라인 */}
       {displayItems.length > 0 && (
         <div className="space-y-6 pt-4">
-          <div className="flex items-center justify-start gap-4 overflow-x-auto px-2 py-4 sm:justify-center sm:gap-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="no-scrollbar flex items-center justify-start gap-4 overflow-x-auto px-2 py-4 sm:justify-center sm:gap-5">
             {displayItems.map((item, idx) => {
               const isSelected = idx === currentIdx;
               return (
