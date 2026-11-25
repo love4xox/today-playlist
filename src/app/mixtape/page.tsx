@@ -75,14 +75,7 @@ export default function MixtapePage() {
       style={{ backgroundColor: "var(--bg-mixtape)" }}
       className="flex min-h-screen flex-col justify-between px-5 py-6 sm:px-10 sm:py-8"
     >
-      <TopNav
-        vaultCount={vault.length}
-        subtitle={
-          result
-            ? `MIXTAPE: ${result.weather} / #${result.mood}`
-            : "MIXTAPE ARCHIVE"
-        }
-      />
+      <TopNav vaultCount={vault.length} subtitle="MIXTAPE ARCHIVE" />
 
       {/* 중앙 정렬된 필름스트립 메인 영역 */}
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-10 py-6">
