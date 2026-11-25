@@ -14,63 +14,6 @@ const RESULT_STORAGE_KEY = "today_playlist_last_result_v1";
 const WEATHER_OPTIONS: WeatherType[] = ["맑음", "비", "흐림", "눈", "밤/새벽"];
 const MOOD_OPTIONS: MoodType[] = ["집중", "잔잔함", "신남", "위로", "드라이브"];
 
-const INITIAL_SAMPLE_VAULT: Track[] = [
-  {
-    id: "trk-001",
-    title: "밤편지",
-    artist: "아이유",
-    genre: "Ballad",
-    moodTags: ["잔잔함", "위로"],
-    note: "조용한 새벽 공기와 가장 잘 어울리는 어쿠스틱 선율",
-    createdAt: "2026-11-23",
-  },
-  {
-    id: "trk-002",
-    title: "Hype Boy",
-    artist: "NewJeans",
-    genre: "K-Pop",
-    moodTags: ["신남", "드라이브"],
-    note: "발걸음을 가볍게 만들어 주는 경쾌한 신스 리듬",
-    createdAt: "2026-11-23",
-  },
-  {
-    id: "trk-003",
-    title: "Rainy Day",
-    artist: "PATEKO",
-    genre: "R&B",
-    moodTags: ["잔잔함", "집중"],
-    note: "빗방울 떨어지는 창가에서 작업할 때 틀어두는 트랙",
-    createdAt: "2026-11-23",
-  },
-  {
-    id: "trk-004",
-    title: "한 페이지가 될 수 있게",
-    artist: "DAY6",
-    genre: "Rock",
-    moodTags: ["신남", "드라이브", "위로"],
-    note: "맑은 하늘 아래 시야가 탁 트이는 청량한 밴드 사운드",
-    createdAt: "2026-11-23",
-  },
-  {
-    id: "trk-005",
-    title: "Instagram",
-    artist: "DEAN",
-    genre: "Alt R&B",
-    moodTags: ["위로", "잔잔함"],
-    note: "늦은 밤 혼자 방 안에서 듣기 좋은 몽환적인 보컬",
-    createdAt: "2026-11-23",
-  },
-  {
-    id: "trk-006",
-    title: "Square (2017)",
-    artist: "백예린",
-    genre: "Indie Pop",
-    moodTags: ["신남", "드라이브", "위로"],
-    note: "초록빛 잔디와 바람이 떠오르는 라이브 감성",
-    createdAt: "2026-11-23",
-  },
-];
-
 export default function LookbookPage() {
   const [vault, setVault] = useState<Track[]>([]);
   const [weather, setWeather] = useState<WeatherType>("비");
@@ -94,20 +37,13 @@ export default function LookbookPage() {
       const savedVault = localStorage.getItem(VAULT_STORAGE_KEY);
       if (savedVault) {
         setVault(JSON.parse(savedVault));
-      } else {
-        setVault(INITIAL_SAMPLE_VAULT);
-        localStorage.setItem(
-          VAULT_STORAGE_KEY,
-          JSON.stringify(INITIAL_SAMPLE_VAULT)
-        );
       }
-
       const savedResult = localStorage.getItem(RESULT_STORAGE_KEY);
       if (savedResult) {
         setResult(JSON.parse(savedResult));
       }
     } catch {
-      setVault(INITIAL_SAMPLE_VAULT);
+      // ignore storage errors
     }
   }, []);
 
@@ -152,13 +88,38 @@ export default function LookbookPage() {
             track,
             comment:
               track.note ||
-              `${weather} 날씨와 #${mood} 무드에 맞춰 선곡을 기다리는 보관 트랙입니다.`,
+              `${weather} 날씨와 #${mood} 무드에 맞춰 보관된 트랙입니다.`,
           }));
 
   const currentIdx = Math.min(activeIndex, Math.max(0, displayItems.length - 1));
   const currentItem = displayItems[currentIdx];
   const totalStr = String(displayItems.length).padStart(2, "0");
   const currentStr = String(currentIdx + 1).padStart(2, "0");
+
+  // 현재 곡이 이미 보관함(03. VAULT)에 있는지 확인
+  const isAlreadyInVault = currentItem
+    ? vault.some(
+        (t) =>
+          t.title.trim().toLowerCase() ===
+            currentItem.track.title.trim().toLowerCase() &&
+          t.artist.trim().toLowerCase() ===
+            currentItem.track.artist.trim().toLowerCase()
+      )
+    : false;
+
+  // 추천받은 곡을 바로 03. VAULT에 저장
+  const handleSaveToVault = () => {
+    if (!currentItem || isAlreadyInVault) return;
+    const newTrack: Track = {
+      ...currentItem.track,
+      id: `trk-${Date.now()}`,
+      note: currentItem.comment,
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+    const updatedVault = [newTrack, ...vault];
+    setVault(updatedVault);
+    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(updatedVault));
+  };
 
   // 현재 표시 곡이 바뀔 때마다 기존 재생 정지 및 미리듣기 URL 조회
   useEffect(() => {
@@ -246,9 +207,9 @@ export default function LookbookPage() {
         }}
       />
 
-      {/* 중앙 대형 앨범 아트워크 + TR.01/03 인덱스 + 재생 컨트롤 */}
+      {/* 중앙 대형 앨범 아트워크 + TR 인덱스 + 재생 & 보관 컨트롤 */}
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center py-8">
-        {currentItem && (
+        {currentItem ? (
           <div className="relative flex w-full flex-col items-center">
             <div className="relative flex w-full max-w-[330px] flex-col sm:max-w-[600px] sm:flex-row sm:items-end sm:gap-6 md:max-w-[660px]">
               <div className="aspect-square w-full max-w-[330px] shrink-0 shadow-2xl sm:max-w-[430px]">
@@ -258,8 +219,8 @@ export default function LookbookPage() {
                 />
               </div>
 
-              {/* 우측 바깥 영역 인덱스, 곡 정보 및 재생 텍스트 */}
-              <div className="mt-5 flex flex-col justify-end gap-3 sm:mt-0 sm:min-w-[165px]">
+              {/* 우측 바깥 영역 인덱스, 곡 정보, 재생 및 보관 버튼 */}
+              <div className="mt-5 flex flex-col justify-end gap-3 sm:mt-0 sm:min-w-[180px]">
                 <div className="flex items-end justify-between sm:block">
                   <div className="select-none sm:mb-3">
                     <div className="font-grotesk inline-block rounded-none border border-[#141414] bg-[#141414] px-3 py-1.5 text-5xl font-bold leading-[0.88] tracking-tighter text-[#F6F3EC] sm:text-6xl md:text-7xl">
@@ -278,7 +239,7 @@ export default function LookbookPage() {
                   </div>
                 </div>
 
-                {/* 음악 재생 컨트롤 (텍스트 전용) */}
+                {/* 음악 재생 컨트롤 */}
                 <div className="space-y-1.5 pt-1">
                   {previewUrl ? (
                     <>
@@ -304,10 +265,28 @@ export default function LookbookPage() {
                       className="font-mono-meta inline-flex items-center gap-1 py-0.5 text-[10px] tracking-wider text-[var(--text-muted)] uppercase transition hover:text-[var(--text-main)] hover:underline hover:underline-offset-4"
                     >
                       <span>
-                        {fetchingPreview ? "LOADING AUDIO..." : "LISTEN ON YOUTUBE →"}
+                        {fetchingPreview
+                          ? "LOADING AUDIO..."
+                          : "LISTEN ON YOUTUBE →"}
                       </span>
                     </a>
                   )}
+                </div>
+
+                {/* 추천곡을 03. VAULT로 바로 저장하는 버튼 */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={handleSaveToVault}
+                    disabled={isAlreadyInVault}
+                    className={`font-mono-meta w-full border px-3 py-1.5 text-left text-[10px] tracking-wider uppercase transition ${
+                      isAlreadyInVault
+                        ? "border-[var(--border-subtle)] text-[var(--text-muted)]"
+                        : "border-[var(--text-main)] text-[var(--text-main)] hover:bg-[var(--text-main)] hover:text-[var(--bg-lookbook)]"
+                    }`}
+                  >
+                    {isAlreadyInVault ? "SAVED IN VAULT ✓" : "+ SAVE TO VAULT"}
+                  </button>
                 </div>
               </div>
             </div>
@@ -332,13 +311,13 @@ export default function LookbookPage() {
                   “{currentItem.comment}”
                 </p>
                 <div className="font-mono-meta flex items-center justify-center gap-3 text-[10px] text-[var(--text-muted)] uppercase">
-                  <span>ID: {currentItem.track.id}</span>
+                  <span>{currentItem.track.genre}</span>
                   <span>·</span>
                   <Link
                     href="/mixtape"
                     className="underline underline-offset-4 hover:text-[var(--text-main)]"
                   >
-                    VIEW FILMSTRIP →
+                    VIEW MIXTAPE →
                   </Link>
                 </div>
               </div>
@@ -357,6 +336,12 @@ export default function LookbookPage() {
               </button>
             </div>
           </div>
+        ) : (
+          <div className="space-y-3 text-center">
+            <p className="text-sm text-[var(--text-muted)]">
+              하단에서 날씨와 기분을 고른 뒤 <strong>CURATE ({count})</strong>를 눌러 새로운 곡을 추천받아 보세요.
+            </p>
+          </div>
         )}
 
         {errorMsg && (
@@ -366,7 +351,7 @@ export default function LookbookPage() {
         )}
       </main>
 
-      {/* 하단 미니멀 선곡 컨트롤 바 */}
+      {/* 하단 미니멀 선곡 컨트롤 바 (보관함이 비어도 항상 활성) */}
       <footer className="mx-auto w-full max-w-6xl border-t border-[var(--border-subtle)] pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3 text-[11px]">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -419,7 +404,7 @@ export default function LookbookPage() {
                   key={num}
                   type="button"
                   onClick={() => setCount(num)}
-                  title={`${num}곡 선곡`}
+                  title={`${num}곡 추천`}
                   className={`font-mono-meta px-1.5 py-0.5 text-[11px] transition ${
                     count === num
                       ? "font-bold underline underline-offset-4 text-[var(--text-main)]"
@@ -434,7 +419,7 @@ export default function LookbookPage() {
             <button
               type="button"
               onClick={handleGenerate}
-              disabled={loading || uniqueTracks.length === 0}
+              disabled={loading}
               className="font-mono-meta inline-flex items-center gap-1.5 border border-[var(--text-main)] bg-[var(--text-main)] px-4 py-1.5 text-[11px] font-medium tracking-wider text-[var(--bg-lookbook)] uppercase transition hover:bg-transparent hover:text-[var(--text-main)] disabled:opacity-40"
             >
               {loading ? (

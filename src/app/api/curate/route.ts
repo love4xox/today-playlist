@@ -1,16 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
-import { prepareCandidateTracks, validateAndBuildPlaylist } from "@/lib/playlist";
 import { MoodType, Track, WeatherType } from "@/lib/types";
-
-function shuffleTracks(tracks: Track[]): Track[] {
-  const copy = [...tracks];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
 
 export async function POST(req: Request) {
   try {
@@ -24,63 +14,42 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const {
-      vault,
+      vault = [],
       weather,
       mood,
-      count,
+      count = 3,
       seed,
     }: {
-      vault: Track[];
+      vault?: Track[];
       weather: WeatherType;
       mood: MoodType;
-      count: number;
+      count?: number;
       seed?: number;
     } = body;
 
-    if (!Array.isArray(vault) || vault.length === 0) {
-      return NextResponse.json(
-        { error: "곡 창고가 비어 있습니다. 먼저 좋아하는 곡을 저장해 주세요." },
-        { status: 400 }
-      );
-    }
+    const requested = Math.max(1, Math.min(Number(count) || 3, 6));
 
-    // 1단계: 규칙 엔진으로 중복 곡 제거 및 후보 필터링
-    const allUniqueTracks = prepareCandidateTracks(vault, "전체");
-    const moodFilteredTracks = prepareCandidateTracks(vault, mood);
-    const requested = Math.max(
-      1,
-      Math.min(Number(count) || 3, allUniqueTracks.length)
-    );
-
-    // 무드 일치 곡이 요청 곡 수보다 적으면 전체 중복 제거 곡 풀을 후보로 사용하여 요청 곡 수 보장
-    const baseCandidates =
-      moodFilteredTracks.length >= requested ? moodFilteredTracks : allUniqueTracks;
-    const candidates = shuffleTracks(baseCandidates);
-
-    const candidateSummary = candidates
-      .map(
-        (t) =>
-          `- ID: "${t.id}" | 곡명: "${t.title}" | 아티스트: "${t.artist}" | 장르: ${t.genre} | 태그: [${t.moodTags.join(", ")}]${t.note ? ` | 메모: ${t.note}` : ""}`
-      )
-      .join("\n");
+    const existingSummary =
+      Array.isArray(vault) && vault.length > 0
+        ? vault.map((t) => `${t.title} - ${t.artist}`).join(", ")
+        : "없음";
 
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `당신은 감각적인 음악 큐레이터입니다.
 오늘의 날씨: "${weather}"
 현재 기분: "${mood}"
-요청 곡 수: 정확히 ${requested}곡
+추천 곡 수: 정확히 ${requested}곡
 요청 시드: ${seed ?? Date.now()}
 
 [규칙]
-1. 반드시 아래 [후보 곡 목록]에 있는 ID 중에서만 정확히 ${requested}곡을 고르세요.
-2. 목록에 없는 곡이나 ID를 절대 지어내지 마세요.
-3. 같은 ID를 중복 선택하지 마세요.
-4. 이전과 다른 조합과 순서로 신선하게 선곡하되, 오늘의 날씨·기분과 어울리는 트랙을 우선 반영하세요.
-5. 각 곡마다 오늘의 날씨·기분과 연결되는 짧고 감성적인 한 줄 선곡 코멘트를 한국어로 작성하세요.
+1. 실제로 존재하는 한국 또는 해외 대중음악/인디/R&B/록/팝 곡 중에서 오늘의 날씨("${weather}")와 기분("${mood}")에 가장 잘 어울리는 곡 ${requested}곡을 새롭게 추천하세요.
+2. 아래 [이미 보관함에 있는 곡]은 최대한 중복 추천하지 말고 신선한 곡 위주로 고르세요.
+3. 같은 아티스트의 곡이 중복되지 않게 다양하게 구성하세요.
+4. 각 곡마다 곡명(title), 아티스트(artist), 장르(genre), 어울리는 무드 태그(moodTags: ["집중", "잔잔함", "신남", "위로", "드라이브"] 중 1~2개), 그리고 감성적인 한 줄 추천 코멘트(comment)를 한국어로 작성하세요.
 
-[후보 곡 목록]
-${candidateSummary}`;
+[이미 보관함에 있는 곡]
+${existingSummary}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
@@ -94,39 +63,70 @@ ${candidateSummary}`;
               type: Type.STRING,
               description: "오늘의 플레이리스트를 한 줄로 표현하는 매거진 제목",
             },
-            selections: {
+            recommendations: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  trackId: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  artist: { type: Type.STRING },
+                  genre: { type: Type.STRING },
+                  moodTags: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                  },
                   comment: { type: Type.STRING },
                 },
-                required: ["trackId", "comment"],
+                required: ["title", "artist", "genre", "moodTags", "comment"],
               },
             },
           },
-          required: ["headline", "selections"],
+          required: ["headline", "recommendations"],
         },
       },
     });
 
     const parsed = JSON.parse(response.text || "{}");
-    const aiSelections = Array.isArray(parsed.selections) ? parsed.selections : [];
+    const recs = Array.isArray(parsed.recommendations)
+      ? parsed.recommendations
+      : [];
 
-    // 2단계: 환각 ID 차단 + 중복 제거 + 요청 곡 수 일치 최종 검증
-    const validated = validateAndBuildPlaylist(
-      candidates,
-      aiSelections,
-      requested
+    const now = Date.now();
+    const today = new Date().toISOString().slice(0, 10);
+
+    const items = recs.slice(0, requested).map(
+      (
+        rec: {
+          title: string;
+          artist: string;
+          genre?: string;
+          moodTags?: MoodType[];
+          comment: string;
+        },
+        idx: number
+      ) => ({
+        track: {
+          id: `rec-${now}-${idx + 1}`,
+          title: rec.title,
+          artist: rec.artist,
+          genre: rec.genre || "Pop",
+          moodTags:
+            Array.isArray(rec.moodTags) && rec.moodTags.length > 0
+              ? rec.moodTags
+              : [mood],
+          note: rec.comment,
+          createdAt: today,
+        } satisfies Track,
+        comment: rec.comment,
+      })
     );
 
     return NextResponse.json(
       {
         headline:
           parsed.headline || `${weather}의 공기, ${mood}을 위한 ${requested}트랙`,
-        items: validated.items,
-        filteredHallucinationCount: validated.filteredHallucinationCount,
+        items,
+        filteredHallucinationCount: 0,
       },
       {
         headers: {
@@ -137,7 +137,7 @@ ${candidateSummary}`;
   } catch (error) {
     console.error("Curate API error:", error);
     return NextResponse.json(
-      { error: "플레이리스트 생성 중 오류가 발생했습니다." },
+      { error: "새로운 곡을 추천받는 중 오류가 발생했습니다." },
       { status: 500 }
     );
   }
