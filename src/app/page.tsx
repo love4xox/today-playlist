@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import AlbumArtwork from "@/components/AlbumArtwork";
 import TopNav from "@/components/TopNav";
@@ -82,6 +82,13 @@ export default function LookbookPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // 오디오 미리듣기 상태
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fetchingPreview, setFetchingPreview] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+
   useEffect(() => {
     try {
       const savedVault = localStorage.getItem(VAULT_STORAGE_KEY);
@@ -105,7 +112,6 @@ export default function LookbookPage() {
   }, []);
 
   const uniqueTracks = prepareCandidateTracks(vault, "전체");
-  const safeCount = Math.min(count, Math.max(1, uniqueTracks.length));
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -118,7 +124,7 @@ export default function LookbookPage() {
           vault,
           weather,
           mood,
-          count: safeCount,
+          count,
         }),
       });
       const data = await res.json();
@@ -139,17 +145,79 @@ export default function LookbookPage() {
   const displayItems =
     result && result.items.length > 0
       ? result.items
-      : uniqueTracks.slice(0, safeCount).map((track) => ({
-          track,
-          comment:
-            track.note ||
-            `${weather} 날씨와 #${mood} 무드에 맞춰 선곡을 기다리는 보관 트랙입니다.`,
-        }));
+      : uniqueTracks
+          .slice(0, Math.min(count, Math.max(1, uniqueTracks.length)))
+          .map((track) => ({
+            track,
+            comment:
+              track.note ||
+              `${weather} 날씨와 #${mood} 무드에 맞춰 선곡을 기다리는 보관 트랙입니다.`,
+          }));
 
   const currentIdx = Math.min(activeIndex, Math.max(0, displayItems.length - 1));
   const currentItem = displayItems[currentIdx];
   const totalStr = String(displayItems.length).padStart(2, "0");
   const currentStr = String(currentIdx + 1).padStart(2, "0");
+
+  // 현재 표시 곡이 바뀔 때마다 기존 재생 정지 및 미리듣기 URL 조회
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsPlaying(false);
+    setProgress(0);
+    setPreviewUrl(null);
+
+    if (!currentItem) return;
+
+    let cancelled = false;
+    setFetchingPreview(true);
+
+    const params = new URLSearchParams({
+      title: currentItem.track.title,
+      artist: currentItem.track.artist,
+    });
+
+    fetch(`/api/cover?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : { previewUrl: null }))
+      .then((data: { previewUrl?: string | null }) => {
+        if (!cancelled) {
+          setPreviewUrl(data.previewUrl || null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewUrl(null);
+      })
+      .finally(() => {
+        if (!cancelled) setFetchingPreview(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentItem?.track.id, currentItem?.track.title, currentItem?.track.artist]);
+
+  const togglePlay = async () => {
+    if (!audioRef.current || !previewUrl) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch {
+        setIsPlaying(false);
+      }
+    }
+  };
+
+  const youtubeSearchUrl = currentItem
+    ? `https://www.youtube.com/results?search_query=${encodeURIComponent(
+        `${currentItem.track.artist} ${currentItem.track.title}`
+      )}`
+    : "#";
 
   return (
     <div
@@ -161,34 +229,84 @@ export default function LookbookPage() {
         subtitle={`CONDITION: ${weather} / #${mood}`}
       />
 
-      {/* 중앙 대형 앨범 아트워크 + TR.01/03 오버레이 */}
+      {/* 숨김 오디오 플레이어 */}
+      <audio
+        ref={audioRef}
+        src={previewUrl || undefined}
+        onTimeUpdate={() => {
+          if (!audioRef.current || !audioRef.current.duration) return;
+          setProgress(
+            (audioRef.current.currentTime / audioRef.current.duration) * 100
+          );
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          setProgress(0);
+        }}
+      />
+
+      {/* 중앙 대형 앨범 아트워크 + TR.01/03 인덱스 + 재생 컨트롤 */}
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center py-8">
         {currentItem && (
           <div className="relative flex w-full flex-col items-center">
-            <div className="relative w-full max-w-[330px] sm:max-w-[430px]">
-              <div className="aspect-square w-full shadow-2xl">
+            <div className="relative flex w-full max-w-[330px] flex-col sm:max-w-[600px] sm:flex-row sm:items-end sm:gap-6 md:max-w-[660px]">
+              <div className="aspect-square w-full max-w-[330px] shrink-0 shadow-2xl sm:max-w-[430px]">
                 <AlbumArtwork
                   track={currentItem.track}
                   className="h-full w-full"
                 />
               </div>
 
-              {/* 우측 하단 거대 인덱스 오버레이 */}
-              <div className="mt-5 flex items-end justify-between sm:mt-0 sm:block">
-                <div className="sm:absolute sm:-right-28 sm:bottom-10 md:-right-36 select-none">
-                  <div className="font-grotesk text-6xl font-bold leading-[0.86] tracking-tighter sm:text-7xl md:text-8xl">
-                    TR.{currentStr}
-                    <span className="block">/{totalStr}</span>
+              {/* 우측 바깥 영역 인덱스, 곡 정보 및 재생 텍스트 */}
+              <div className="mt-5 flex flex-col justify-end gap-3 sm:mt-0 sm:min-w-[165px]">
+                <div className="flex items-end justify-between sm:block">
+                  <div className="select-none sm:mb-3">
+                    <div className="font-grotesk inline-block rounded-none border border-[#141414] bg-[#141414] px-3 py-1.5 text-5xl font-bold leading-[0.88] tracking-tighter text-[#F6F3EC] sm:text-6xl md:text-7xl">
+                      TR.{currentStr}
+                      <span className="block">/{totalStr}</span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-[var(--border-subtle)] pt-2 text-right sm:w-full sm:text-left">
+                    <p className="text-xs font-bold leading-tight">
+                      {currentItem.track.title}
+                    </p>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      {currentItem.track.artist}
+                    </p>
                   </div>
                 </div>
 
-                <div className="text-right sm:absolute sm:-right-28 sm:-bottom-7 md:-right-36 sm:text-left">
-                  <p className="text-xs font-bold leading-tight">
-                    {currentItem.track.title}
-                  </p>
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    {currentItem.track.artist}
-                  </p>
+                {/* 음악 재생 컨트롤 (텍스트 전용) */}
+                <div className="space-y-1.5 pt-1">
+                  {previewUrl ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={togglePlay}
+                        className="font-mono-meta inline-flex items-center gap-1.5 py-0.5 text-[11px] tracking-wider text-[var(--text-main)] uppercase transition hover:underline hover:underline-offset-4"
+                      >
+                        <span>{isPlaying ? "PAUSE 30S" : "PLAY 30S"}</span>
+                      </button>
+                      <div className="h-[1px] w-24 overflow-hidden bg-[var(--border-subtle)]">
+                        <div
+                          style={{ width: `${progress}%` }}
+                          className="h-full bg-[var(--text-main)] transition-all duration-150"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <a
+                      href={youtubeSearchUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono-meta inline-flex items-center gap-1 py-0.5 text-[10px] tracking-wider text-[var(--text-muted)] uppercase transition hover:text-[var(--text-main)] hover:underline hover:underline-offset-4"
+                    >
+                      <span>
+                        {fetchingPreview ? "LOADING AUDIO..." : "LISTEN ON YOUTUBE →"}
+                      </span>
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -208,7 +326,7 @@ export default function LookbookPage() {
                 <ArrowLeft className="h-4 w-4" />
               </button>
 
-              <div className="text-center space-y-1.5">
+              <div className="space-y-1.5 text-center">
                 <p className="text-xs leading-relaxed sm:text-sm">
                   “{currentItem.comment}”
                 </p>
@@ -299,18 +417,13 @@ export default function LookbookPage() {
                 <button
                   key={num}
                   type="button"
-                  disabled={uniqueTracks.length > 0 && num > uniqueTracks.length}
                   onClick={() => setCount(num)}
-                  title={
-                    uniqueTracks.length > 0 && num > uniqueTracks.length
-                      ? `보유 곡(${uniqueTracks.length}곡) 부족`
-                      : `${num}곡 선곡`
-                  }
-                  className={`font-mono-meta px-1.5 py-0.5 text-[11px] ${
-                    safeCount === num
-                      ? "font-bold underline underline-offset-4"
-                      : "text-[var(--text-muted)]"
-                  } disabled:cursor-not-allowed disabled:opacity-30`}
+                  title={`${num}곡 선곡`}
+                  className={`font-mono-meta px-1.5 py-0.5 text-[11px] transition ${
+                    count === num
+                      ? "font-bold underline underline-offset-4 text-[var(--text-main)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                  }`}
                 >
                   {String(num).padStart(2, "0")}
                 </button>
@@ -329,7 +442,7 @@ export default function LookbookPage() {
                   <span>CURATING...</span>
                 </>
               ) : (
-                <span>CURATE ({safeCount})</span>
+                <span>CURATE ({count})</span>
               )}
             </button>
           </div>
