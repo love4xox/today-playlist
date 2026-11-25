@@ -1,42 +1,74 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import AlbumArtwork from "@/components/AlbumArtwork";
 import TopNav from "@/components/TopNav";
+import { prepareCandidateTracks } from "@/lib/playlist";
 import { CurationResult, Track } from "@/lib/types";
 
 const VAULT_STORAGE_KEY = "today_playlist_vault_v1";
 const RESULT_STORAGE_KEY = "today_playlist_last_result_v1";
 
-export default function MixtapeFilmstripPage() {
+export default function MixtapePage() {
   const [vault, setVault] = useState<Track[]>([]);
   const [result, setResult] = useState<CurationResult | null>(null);
   const [activeIndex, setActiveIndex] = useState<number>(0);
 
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
   useEffect(() => {
     try {
       const savedVault = localStorage.getItem(VAULT_STORAGE_KEY);
-      if (savedVault) setVault(JSON.parse(savedVault));
-
+      if (savedVault) {
+        setVault(JSON.parse(savedVault));
+      }
       const savedResult = localStorage.getItem(RESULT_STORAGE_KEY);
-      if (savedResult) setResult(JSON.parse(savedResult));
+      if (savedResult) {
+        setResult(JSON.parse(savedResult));
+      }
     } catch {
-      // ignore
+      // ignore storage errors
     }
   }, []);
 
-  const items =
+  const uniqueTracks = prepareCandidateTracks(vault, "전체");
+
+  const displayItems =
     result && result.items.length > 0
       ? result.items
-      : vault.slice(0, 5).map((track) => ({
+      : uniqueTracks.map((track) => ({
           track,
           comment:
-            track.note || "오늘의 무드에 맞춰 선곡된 아카이브 트랙입니다.",
+            track.note || "보관함에서 불러온 큐레이션 대기 트랙입니다.",
         }));
 
-  const currentIdx = Math.min(activeIndex, Math.max(0, items.length - 1));
-  const activeItem = items[currentIdx];
+  const currentIdx = Math.min(activeIndex, Math.max(0, displayItems.length - 1));
+  const currentItem = displayItems[currentIdx];
+
+  useEffect(() => {
+    const target = itemRefs.current[currentIdx];
+    if (target) {
+      target.scrollIntoView({
+        behavior: "smooth",
+        inline: "center",
+        block: "nearest",
+      });
+    }
+  }, [currentIdx, displayItems.length]);
+
+  const handlePrev = () => {
+    setActiveIndex((prev) =>
+      prev <= 0 ? displayItems.length - 1 : prev - 1
+    );
+  };
+
+  const handleNext = () => {
+    setActiveIndex((prev) =>
+      prev >= displayItems.length - 1 ? 0 : prev + 1
+    );
+  };
 
   return (
     <div
@@ -45,39 +77,53 @@ export default function MixtapeFilmstripPage() {
     >
       <TopNav
         vaultCount={vault.length}
-        subtitle={`MIXTAPE FILMSTRIP · ${items.length} TRACKS`}
+        subtitle={
+          result
+            ? `MIXTAPE: ${result.weather} / #${result.mood}`
+            : "MIXTAPE ARCHIVE"
+        }
       />
 
-      {/* 중앙 넓은 갤러리 여백 + 선택된 트랙의 코멘트 및 번호 프레임 */}
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-end pb-4">
-        {activeItem ? (
-          <div className="space-y-12">
-            {/* 상단 여백 중앙에 떠 있는 트랙 메타 & 코멘트 */}
-            <div className="mx-auto max-w-lg text-center space-y-3 py-10">
-              <span className="font-mono-meta inline-block border border-[var(--border-subtle)] px-2.5 py-0.5 text-[10px] tracking-widest text-[var(--text-muted)]">
-                0{currentIdx + 1} — 0{items.length} · ID {activeItem.track.id}
-              </span>
+      {/* 중앙 정렬된 필름스트립 메인 영역 */}
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-10 py-6">
+        {currentItem ? (
+          <>
+            {/* 상단 선택 트랙 메타 & 코멘트 */}
+            <div className="mx-auto max-w-xl space-y-2.5 text-center">
+              <div className="font-mono-meta inline-block border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[10px] tracking-widest text-[var(--text-muted)] uppercase">
+                {String(currentIdx + 1).padStart(2, "0")} —{" "}
+                {String(displayItems.length).padStart(2, "0")} · ID{" "}
+                {currentItem.track.id}
+              </div>
+
               <p className="text-sm font-medium leading-relaxed sm:text-base">
-                “{activeItem.comment}”
+                “{currentItem.comment}”
               </p>
-              <p className="font-mono-meta text-[11px] text-[var(--text-muted)]">
-                {activeItem.track.title} — {activeItem.track.artist}
+
+              <p className="text-xs text-[var(--text-muted)]">
+                {currentItem.track.title} — {currentItem.track.artist}
               </p>
             </div>
 
-            {/* 두 번째 레퍼런스 핵심: 가로 앨범 필름스트립 (선택된 트랙만 컬러, 나머지 흑백) */}
-            <div className="flex items-center justify-center gap-3 overflow-x-auto py-2 sm:gap-5">
-              {items.map((item, idx) => {
+            {/* 가로 필름스트립 (모든 프레임 동일 정사각형 + 스크롤바 완전 숨김) */}
+            <div
+              ref={stripRef}
+              className="no-scrollbar flex w-full items-center justify-start gap-4 overflow-x-auto px-4 py-4 sm:justify-center sm:gap-6"
+            >
+              {displayItems.map((item, idx) => {
                 const isSelected = idx === currentIdx;
                 return (
                   <button
-                    key={item.track.id}
+                    key={`${item.track.id}-${idx}`}
+                    ref={(el) => {
+                      itemRefs.current[idx] = el;
+                    }}
                     type="button"
                     onClick={() => setActiveIndex(idx)}
-                    className={`group relative shrink-0 overflow-hidden rounded-md transition-all duration-500 ${
+                    className={`group relative aspect-square w-40 shrink-0 overflow-hidden transition-all duration-300 sm:w-48 md:w-52 ${
                       isSelected
-                        ? "h-44 w-72 sm:h-56 sm:w-96 shadow-lg"
-                        : "h-44 w-36 sm:h-56 sm:w-52"
+                        ? "-translate-y-1.5 opacity-100 ring-2 ring-[var(--text-main)] shadow-xl"
+                        : "opacity-65 hover:opacity-100"
                     }`}
                   >
                     <AlbumArtwork
@@ -85,43 +131,42 @@ export default function MixtapeFilmstripPage() {
                       grayscale={!isSelected}
                       className="h-full w-full"
                     />
+                    <span className="font-mono-meta absolute bottom-2 left-2 bg-black/65 px-1.5 py-0.5 text-[9px] text-white">
+                      {String(idx + 1).padStart(2, "0")}
+                    </span>
                   </button>
                 );
               })}
             </div>
 
-            {/* 하단 세리프 대형 타이틀 & 좌우 화살표 */}
-            <div className="flex items-center justify-between pt-2">
+            {/* 하단 세리프 타이틀 & 좌우 화살표 */}
+            <div className="flex items-center justify-between border-t border-[var(--border-subtle)] pt-6">
               <button
                 type="button"
-                onClick={() =>
-                  setActiveIndex((p) => (p <= 0 ? items.length - 1 : p - 1))
-                }
+                onClick={handlePrev}
                 aria-label="이전 트랙"
                 className="p-2 text-[var(--text-muted)] transition hover:text-[var(--text-main)]"
               >
                 <ArrowLeft className="h-4 w-4" />
               </button>
 
-              <h1 className="font-editorial-serif text-center text-3xl tracking-wide uppercase sm:text-5xl">
+              <h1 className="font-editorial-serif text-center text-2xl tracking-wide uppercase sm:text-4xl md:text-5xl">
                 {result ? result.headline : "CURATED ARCHIVE"}
               </h1>
 
               <button
                 type="button"
-                onClick={() =>
-                  setActiveIndex((p) => (p >= items.length - 1 ? 0 : p + 1))
-                }
+                onClick={handleNext}
                 aria-label="다음 트랙"
                 className="p-2 text-[var(--text-muted)] transition hover:text-[var(--text-main)]"
               >
                 <ArrowRight className="h-4 w-4" />
               </button>
             </div>
-          </div>
+          </>
         ) : (
-          <p className="py-20 text-center text-xs text-[var(--text-muted)]">
-            표시할 트랙이 없습니다. 01. LOOKBOOK 또는 03. VAULT에서 곡을 추가해 주세요.
+          <p className="text-center text-xs text-[var(--text-muted)]">
+            보관함에 트랙이 없습니다. 03. VAULT에서 곡을 추가해 주세요.
           </p>
         )}
       </main>
