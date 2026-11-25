@@ -125,6 +125,7 @@ export default function LookbookPage() {
           weather,
           mood,
           count,
+          seed: Date.now(),
         }),
       });
       const data = await res.json();
