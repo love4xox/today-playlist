@@ -3,6 +3,15 @@ import { NextResponse } from "next/server";
 import { prepareCandidateTracks, validateAndBuildPlaylist } from "@/lib/playlist";
 import { MoodType, Track, WeatherType } from "@/lib/types";
 
+function shuffleTracks(tracks: Track[]): Track[] {
+  const copy = [...tracks];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -19,11 +28,13 @@ export async function POST(req: Request) {
       weather,
       mood,
       count,
+      seed,
     }: {
       vault: Track[];
       weather: WeatherType;
       mood: MoodType;
       count: number;
+      seed?: number;
     } = body;
 
     if (!Array.isArray(vault) || vault.length === 0) {
@@ -36,11 +47,15 @@ export async function POST(req: Request) {
     // 1단계: 규칙 엔진으로 중복 곡 제거 및 후보 필터링
     const allUniqueTracks = prepareCandidateTracks(vault, "전체");
     const moodFilteredTracks = prepareCandidateTracks(vault, mood);
-    const requested = Math.max(1, Math.min(Number(count) || 3, allUniqueTracks.length));
+    const requested = Math.max(
+      1,
+      Math.min(Number(count) || 3, allUniqueTracks.length)
+    );
 
     // 무드 일치 곡이 요청 곡 수보다 적으면 전체 중복 제거 곡 풀을 후보로 사용하여 요청 곡 수 보장
-    const candidates =
+    const baseCandidates =
       moodFilteredTracks.length >= requested ? moodFilteredTracks : allUniqueTracks;
+    const candidates = shuffleTracks(baseCandidates);
 
     const candidateSummary = candidates
       .map(
@@ -55,12 +70,14 @@ export async function POST(req: Request) {
 오늘의 날씨: "${weather}"
 현재 기분: "${mood}"
 요청 곡 수: 정확히 ${requested}곡
+요청 시드: ${seed ?? Date.now()}
 
 [규칙]
 1. 반드시 아래 [후보 곡 목록]에 있는 ID 중에서만 정확히 ${requested}곡을 고르세요.
 2. 목록에 없는 곡이나 ID를 절대 지어내지 마세요.
 3. 같은 ID를 중복 선택하지 마세요.
-4. 각 곡마다 오늘의 날씨·기분과 연결되는 짧고 감성적인 한 줄 선곡 코멘트를 한국어로 작성하세요.
+4. 이전과 다른 조합과 순서로 신선하게 선곡하되, 오늘의 날씨·기분과 어울리는 트랙을 우선 반영하세요.
+5. 각 곡마다 오늘의 날씨·기분과 연결되는 짧고 감성적인 한 줄 선곡 코멘트를 한국어로 작성하세요.
 
 [후보 곡 목록]
 ${candidateSummary}`;
@@ -104,12 +121,19 @@ ${candidateSummary}`;
       requested
     );
 
-    return NextResponse.json({
-      headline:
-        parsed.headline || `${weather}의 공기, ${mood}을 위한 ${requested}트랙`,
-      items: validated.items,
-      filteredHallucinationCount: validated.filteredHallucinationCount,
-    });
+    return NextResponse.json(
+      {
+        headline:
+          parsed.headline || `${weather}의 공기, ${mood}을 위한 ${requested}트랙`,
+        items: validated.items,
+        filteredHallucinationCount: validated.filteredHallucinationCount,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
+    );
   } catch (error) {
     console.error("Curate API error:", error);
     return NextResponse.json(
